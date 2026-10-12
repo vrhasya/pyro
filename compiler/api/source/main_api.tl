@@ -744,6 +744,7 @@ inputBotInlineMessageMediaContact#a6edbffd flags:# phone_number:string first_nam
 inputBotInlineMessageGame#4b425864 flags:# reply_markup:flags.2?ReplyMarkup = InputBotInlineMessage;
 inputBotInlineMessageMediaInvoice#d7e78225 flags:# title:string description:string photo:flags.0?InputWebDocument invoice:Invoice payload:bytes provider:string provider_data:DataJSON reply_markup:flags.2?ReplyMarkup = InputBotInlineMessage;
 inputBotInlineMessageMediaWebPage#bddcc510 flags:# invert_media:flags.3?true force_large_media:flags.4?true force_small_media:flags.5?true optional:flags.6?true message:string entities:flags.1?Vector<MessageEntity> url:string reply_markup:flags.2?ReplyMarkup = InputBotInlineMessage;
+inputBotInlineMessageRichMessage#b43df56c flags:# reply_markup:flags.2?ReplyMarkup rich_message:InputRichMessage = InputBotInlineMessage;
 
 inputBotInlineResult#88bf9319 flags:# id:string type:string title:flags.1?string description:flags.2?string url:flags.3?string thumb:flags.4?InputWebDocument content:flags.5?InputWebDocument send_message:InputBotInlineMessage = InputBotInlineResult;
 inputBotInlineResultPhoto#a8d864a7 id:string type:string photo:InputPhoto send_message:InputBotInlineMessage = InputBotInlineResult;
@@ -757,6 +758,7 @@ botInlineMessageMediaVenue#8a86659c flags:# geo:GeoPoint title:string address:st
 botInlineMessageMediaContact#18d1cdc2 flags:# phone_number:string first_name:string last_name:string vcard:string reply_markup:flags.2?ReplyMarkup = BotInlineMessage;
 botInlineMessageMediaInvoice#354a9b09 flags:# shipping_address_requested:flags.1?true test:flags.3?true title:string description:string photo:flags.0?WebDocument currency:string total_amount:long reply_markup:flags.2?ReplyMarkup = BotInlineMessage;
 botInlineMessageMediaWebPage#809ad9a6 flags:# invert_media:flags.3?true force_large_media:flags.4?true force_small_media:flags.5?true manual:flags.7?true safe:flags.8?true message:string entities:flags.1?Vector<MessageEntity> url:string reply_markup:flags.2?ReplyMarkup = BotInlineMessage;
+botInlineMessageRichMessage#a617e7b flags:# reply_markup:flags.2?ReplyMarkup rich_message:RichMessage = BotInlineMessage;
 
 botInlineResult#11965f3a flags:# id:string type:string title:flags.1?string description:flags.2?string url:flags.3?string thumb:flags.4?WebDocument content:flags.5?WebDocument send_message:BotInlineMessage = BotInlineResult;
 botInlineMediaResult#17db940b flags:# id:string type:string photo:flags.0?Photo document:flags.1?Document title:flags.2?string description:flags.3?string send_message:BotInlineMessage = BotInlineResult;
@@ -863,6 +865,21 @@ textMarked#34b8621 text:RichText = RichText;
 textPhone#1ccb966a text:RichText phone:string = RichText;
 textImage#81ccf4f document_id:long w:int h:int = RichText;
 textAnchor#35553762 text:RichText name:string = RichText;
+textMath#9d2eac97 source:string = RichText;
+textCustomEmoji#a26156c0 document_id:long alt:string = RichText;
+textSpoiler#4c2a5d62 text:RichText = RichText;
+textMention#cd24cf44 text:RichText = RichText;
+textHashtag#519524ea text:RichText = RichText;
+textBotCommand#2ff29d3 text:RichText = RichText;
+textCashtag#7b9e1801 text:RichText = RichText;
+textAutoUrl#ac6a83aa text:RichText = RichText;
+textAutoEmail#c556a45d text:RichText = RichText;
+textAutoPhone#24c26789 text:RichText = RichText;
+textBankCard#b956812d text:RichText = RichText;
+textMentionName#1a9fbfc text:RichText user_id:long = RichText;
+textDate#a5b45e2b flags:# relative:flags.0?true short_time:flags.1?true long_time:flags.2?true short_date:flags.3?true long_date:flags.4?true day_of_week:flags.5?true text:RichText date:int = RichText;
+textDiff#9686cb50 text:RichText old_text:RichText = RichText;
+textButton#afc79cd6 flags:# text:RichText type:InlineButtonType style:flags.0?RichButtonStyle = RichText;
 
 pageBlockUnsupported#13567e8a = PageBlock;
 pageBlockTitle#70abc3fd text:RichText = PageBlock;
@@ -877,9 +894,10 @@ pageBlockDivider#db20b188 = PageBlock;
 pageBlockAnchor#ce0d37b0 name:string = PageBlock;
 pageBlockList#e4e88011 items:Vector<PageListItem> = PageBlock;
 pageBlockBlockquote#263d7c26 text:RichText caption:RichText = PageBlock;
+pageBlockBlockquoteRich#66d1670b flags:# collapsed:flags.0?true text:RichText caption:RichText = PageBlock;
 pageBlockPullquote#4f4456d3 text:RichText caption:RichText = PageBlock;
-pageBlockPhoto#1759c560 flags:# photo_id:long caption:PageCaption url:flags.0?string webpage_id:flags.0?long = PageBlock;
-pageBlockVideo#7c8fe7b6 flags:# autoplay:flags.0?true loop:flags.1?true video_id:long caption:PageCaption = PageBlock;
+pageBlockPhoto#1759c560 flags:# spoiler:flags.1?true photo_id:long caption:PageCaption url:flags.0?string webpage_id:flags.0?long = PageBlock;
+pageBlockVideo#7c8fe7b6 flags:# autoplay:flags.0?true loop:flags.1?true spoiler:flags.2?true video_id:long caption:PageCaption = PageBlock;
 pageBlockCover#39f23300 cover:PageBlock = PageBlock;
 pageBlockEmbed#a8718dc5 flags:# full_width:flags.0?true allow_scrolling:flags.3?true url:flags.1?string html:flags.2?string poster_photo_id:flags.4?long w:flags.5?int h:flags.5?int caption:PageCaption = PageBlock;
 pageBlockEmbedPost#f259a80b url:string webpage_id:long author_photo_id:long author:string date:int blocks:Vector<PageBlock> caption:PageCaption = PageBlock;
@@ -888,11 +906,24 @@ pageBlockSlideshow#31f9590 items:Vector<PageBlock> caption:PageCaption = PageBlo
 pageBlockChannel#ef1751b5 channel:Chat = PageBlock;
 pageBlockAudio#804361ea audio_id:long caption:PageCaption = PageBlock;
 pageBlockKicker#1e148390 text:RichText = PageBlock;
-pageBlockTable#bf4dea82 flags:# bordered:flags.0?true striped:flags.1?true title:RichText rows:Vector<PageTableRow> = PageBlock;
+pageBlockTable#bf4dea82 flags:# bordered:flags.0?true striped:flags.1?true compact:flags.2?true title:RichText rows:Vector<PageTableRow> = PageBlock;
 pageBlockOrderedList#9a8ae1e1 items:Vector<PageListOrderedItem> = PageBlock;
+pageBlockOrderedListRich#1fd6f6c1 flags:# reversed:flags.2?true items:Vector<PageListOrderedItem> start:flags.0?int type:flags.1?string = PageBlock;
 pageBlockDetails#76768bed flags:# open:flags.0?true blocks:Vector<PageBlock> title:RichText = PageBlock;
 pageBlockRelatedArticles#16115a96 title:RichText articles:Vector<PageRelatedArticle> = PageBlock;
 pageBlockMap#a44f3ef6 geo:GeoPoint zoom:int w:int h:int caption:PageCaption = PageBlock;
+pageBlockHeading1#baff072f text:RichText = PageBlock;
+pageBlockHeading2#96b2aec text:RichText = PageBlock;
+pageBlockHeading3#67e731ad text:RichText = PageBlock;
+pageBlockHeading4#b532772b text:RichText = PageBlock;
+pageBlockHeading5#dbbe6c6a text:RichText = PageBlock;
+pageBlockHeading6#682a41a9 text:RichText = PageBlock;
+pageBlockMath#59080c20 source:string = PageBlock;
+pageBlockThinking#3c29a3e2 text:RichText = PageBlock;
+inputPageBlockMap#574b617f geo:InputGeoPoint zoom:int w:int h:int caption:PageCaption = PageBlock;
+pageBlockBlockquoteBlocks#e6e47c4 blocks:Vector<PageBlock> caption:RichText = PageBlock;
+pageBlockButtonRow#6d640318 flags:# align_left:flags.0?true align_center:flags.1?true align_right:flags.2?true buttons:Vector<PageButton> = PageBlock;
+pageBlockDocument#38fa3ba3 document_id:long caption:PageCaption = PageBlock;
 
 phoneCallDiscardReasonMissed#85e42301 = PhoneCallDiscardReason;
 phoneCallDiscardReasonDisconnect#e095c1a0 = PhoneCallDiscardReason;
@@ -1168,9 +1199,13 @@ pageCaption#6f747657 text:RichText credit:RichText = PageCaption;
 
 pageListItemText#b92fb6cd text:RichText = PageListItem;
 pageListItemBlocks#25e073fc blocks:Vector<PageBlock> = PageListItem;
+pageListItemTextRich#2f58683c flags:# checkbox:flags.0?true checked:flags.1?true text:RichText = PageListItem;
+pageListItemBlocksRich#63ca67aa flags:# checkbox:flags.0?true checked:flags.1?true blocks:Vector<PageBlock> = PageListItem;
 
 pageListOrderedItemText#5e068047 num:string text:RichText = PageListOrderedItem;
 pageListOrderedItemBlocks#98dd8936 num:string blocks:Vector<PageBlock> = PageListOrderedItem;
+pageListOrderedItemTextRich#15031189 flags:# checkbox:flags.0?true checked:flags.1?true num:flags.2?string text:RichText value:flags.3?int type:flags.4?string = PageListOrderedItem;
+pageListOrderedItemBlocksRich#8ff2d5f0 flags:# checkbox:flags.0?true checked:flags.1?true num:flags.2?string blocks:Vector<PageBlock> value:flags.3?int type:flags.4?string = PageListOrderedItem;
 
 pageRelatedArticle#b390dc08 flags:# url:string webpage_id:long title:flags.0?string description:flags.1?string photo_id:flags.2?long author:flags.3?string published_date:flags.4?int = PageRelatedArticle;
 
@@ -1906,6 +1941,30 @@ starsAmount#bbb6b4a3 amount:long nanos:int = StarsAmount;
 
 messages.foundStickersNotModified#6010c534 flags:# next_offset:flags.0?int = messages.FoundStickers;
 messages.foundStickers#82c9e290 flags:# next_offset:flags.0?int hash:long stickers:Vector<Document> = messages.FoundStickers;
+
+
+// Native Rich extension sourced from Pyrogram Styled schema 548631943135fd917e1bf8e16e99ed6d7da89c81.
+// Existing Navy constructors and legacy IDs are intentionally preserved.
+inputRichFilePhoto#9b00622b id:string photo:InputPhoto = InputRichFile;
+inputRichFileDocument#83281dbd id:string document:InputDocument = InputRichFile;
+inputRichMessage#e4c449fc flags:# rtl:flags.0?true noautolink:flags.1?true blocks:Vector<PageBlock> photos:flags.2?Vector<InputPhoto> documents:flags.3?Vector<InputDocument> users:flags.4?Vector<InputUser> = InputRichMessage;
+inputRichMessageHTML#dacb836a flags:# rtl:flags.0?true noautolink:flags.1?true html:string files:flags.2?Vector<InputRichFile> = InputRichMessage;
+inputRichMessageMarkdown#4b572c flags:# rtl:flags.0?true noautolink:flags.1?true markdown:string files:flags.2?Vector<InputRichFile> = InputRichMessage;
+richMessage#baf39d8b flags:# rtl:flags.0?true part:flags.1?true blocks:Vector<PageBlock> photos:Vector<Photo> documents:Vector<Document> = RichMessage;
+inlineButtonTypeUrl#eca4f8d4 url:string = InlineButtonType;
+inlineButtonTypeUrlAuth#bfd02da2 flags:# fwd_text:flags.0?string url:string button_id:int = InlineButtonType;
+inputInlineButtonTypeUrlAuth#9961bcb4 flags:# request_write_access:flags.0?true fwd_text:flags.1?string url:string bot:flags.2?InputUser = InlineButtonType;
+inlineButtonTypeWebView#3bcab5b4 url:string = InlineButtonType;
+inlineButtonTypeCallback#2955bc38 flags:# requires_password:flags.0?true data:bytes = InlineButtonType;
+inlineButtonTypeGame#5cd3709d = InlineButtonType;
+inlineButtonTypeBuy#48bad7a5 = InlineButtonType;
+inlineButtonTypeSwitchInline#93773ff5 flags:# same_peer:flags.0?true query:string peer_types:flags.1?Vector<InlineQueryPeerType> = InlineButtonType;
+inlineButtonTypeUserProfile#3fa33fcf user_id:long = InlineButtonType;
+inputInlineButtonTypeUserProfile#53f3ce5a user_id:InputUser = InlineButtonType;
+inlineButtonTypeCopy#b41d3272 copy_text:string = InlineButtonType;
+inlineButtonTypeDisabled#a438619d = InlineButtonType;
+richButtonStyle#3c610bd flags:# bg_primary:flags.0?true bg_danger:flags.1?true bg_success:flags.2?true link:flags.3?true = RichButtonStyle;
+pageButton#692a5488 flags:# text:RichText type:InlineButtonType style:flags.0?RichButtonStyle = PageButton;
 
 ---functions---
 
