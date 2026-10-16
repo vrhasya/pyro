@@ -1,0 +1,37 @@
+name: Beta fast download - isolated tests
+
+on:
+  push:
+    branches: [beta-fast-download]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-fast-download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Syntax checks
+        run: |
+          python -m py_compile pyrogram/methods/messages/_beta_fast_download.py pyrogram/methods/messages/download_media.py tests/test_beta_fast_download.py
+      - name: Test bounded parallel file assembly, progress, and fallback
+        run: |
+          python -m unittest discover -v -s tests -p test_beta_fast_download.py
+      - name: Verify default behavior remains opt-in
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          code = Path("pyrogram/methods/messages/download_media.py").read_text()
+          assert "beta_parallel: bool = False" in code
+          assert "if beta_parallel and block:" in code
+          assert "downloader = self.handle_download(packet)" in code
+          print("Default downloader unchanged")
+          PY
