@@ -36,7 +36,9 @@ class DownloadMedia:
         in_memory: bool = False,
         block: bool = True,
         progress: Callable = None,
-        progress_args: tuple = ()
+        progress_args: tuple = (),
+        beta_parallel: bool = False,
+        beta_parallel_workers: int = 2
     ) -> Optional[Union[str, BinaryIO]]:
         """Download the media from a message.
 
@@ -67,6 +69,13 @@ class DownloadMedia:
                 The function must take *(current, total)* as positional arguments (look at Other Parameters below for a
                 detailed description) and will be called back each time a new file chunk has been successfully
                 transmitted.
+
+            beta_parallel (``bool``, *optional*):
+                Enable the experimental bounded parallel disk download. Defaults to False.
+                This does not affect normal downloads, in-memory media, or uploads.
+
+            beta_parallel_workers (``int``, *optional*):
+                Number of parallel range requests (2 to 4). Default: 2.
 
             progress_args (``tuple``, *optional*):
                 Extra custom arguments for the progress callback function.
@@ -177,9 +186,12 @@ class DownloadMedia:
                 extension
             )
 
-        downloader = self.handle_download(
-            (file_id_obj, directory, file_name, in_memory, file_size, progress, progress_args)
-        )
+        packet = (file_id_obj, directory, file_name, in_memory, file_size, progress, progress_args)
+        if beta_parallel and block:
+            from ._beta_fast_download import download_media_parallel
+            downloader = download_media_parallel(self, packet, workers=beta_parallel_workers)
+        else:
+            downloader = self.handle_download(packet)
 
         if block:
             return await downloader
