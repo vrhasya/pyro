@@ -166,6 +166,28 @@ class SaveFileReliabilityTests(unittest.IsolatedAsyncioTestCase):
                 file_id=42, file_part=1,
             )
 
+    async def test_large_file_premium_flood_wait_recovers_all_parts(self):
+        # Real JOB #58 failed on files larger than 10 MiB (four upload workers).
+        # A retry must preserve each part number and complete every part.
+        FakeSession.behavior = {
+            0: [FakeFloodPremiumWait(13), True],
+            1: [FakeFloodPremiumWait(13), True],
+        }
+        payload = b"x" * (10 * 1024 * 1024 + 1)
+        with patch.object(
+            save_file_module.asyncio, "sleep", new_callable=AsyncMock
+        ) as sleep:
+            result = await save_file_module.SaveFile.save_file(
+                self.client(), io.BytesIO(payload)
+            )
+        parts = [part for part, _ in FakeSession.instances[0].calls]
+        self.assertEqual(result.parts, 21)
+        self.assertEqual(parts.count(0), 2)
+        self.assertEqual(parts.count(1), 2)
+        self.assertEqual(set(parts), set(range(21)))
+        self.assertGreaterEqual(sleep.await_count, 2)
+        self.assertTrue(FakeSession.instances[0].stopped)
+
     async def test_large_file_acknowledges_all_parts(self):
         payload = b"x" * (10 * 1024 * 1024 + 1)
         result = await save_file_module.SaveFile.save_file(
