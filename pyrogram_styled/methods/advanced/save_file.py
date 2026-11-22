@@ -30,6 +30,7 @@ from typing import Union, BinaryIO, Callable
 import pyrogram_styled
 from pyrogram_styled import StopTransmission
 from pyrogram_styled import raw
+from pyrogram_styled.errors import FloodPremiumWait, FloodWait
 from pyrogram_styled.session import Session
 
 log = logging.getLogger(__name__)
@@ -98,17 +99,65 @@ class SaveFile:
             if path is None:
                 return None
 
+            # A part must be acknowledged before the file can be passed to UploadMedia.
+            # A shared cooldown prevents other workers from immediately retrying during
+            # a Telegram-mandated flood wait.
+            queue = asyncio.Queue(1)
+            failures = []
+            confirmed_parts = 0
+            next_upload_at = 0.0
+            flood_lock = asyncio.Lock()
+            progress_lock = asyncio.Lock()
+
+            async def upload_part(session, data):
+                nonlocal next_upload_at
+                for attempt in range(4):
+                    async with flood_lock:
+                        delay = max(0.0, next_upload_at - self.loop.time())
+                    if delay:
+                        await asyncio.sleep(delay)
+                    try:
+                        acknowledged = await session.invoke(data, sleep_threshold=0)
+                        if not acknowledged:
+                            raise IOError("Telegram did not acknowledge the uploaded file part.")
+                        return
+                    except (FloodWait, FloodPremiumWait) as exc:
+                        wait = max(1, int(exc.value))
+                        if wait > 60 or attempt == 3:
+                            raise
+                        async with flood_lock:
+                            next_upload_at = max(next_upload_at, self.loop.time() + wait + 1)
+                        log.warning("Upload part flood wait: %s seconds before retry", wait)
+
             async def worker(session):
+                nonlocal confirmed_parts
                 while True:
                     data = await queue.get()
-
-                    if data is None:
-                        return
-
                     try:
-                        await session.invoke(data)
-                    except Exception as e:
-                        log.exception(e)
+                        if data is None:
+                            return
+                        if failures:
+                            continue
+                        await upload_part(session, data)
+                        async with progress_lock:
+                            confirmed_parts += 1
+                            if progress and not is_missing_part:
+                                func = functools.partial(
+                                    progress,
+                                    min(confirmed_parts * part_size, file_size),
+                                    file_size,
+                                    *progress_args
+                                )
+                                if inspect.iscoroutinefunction(progress):
+                                    await func()
+                                else:
+                                    await self.loop.run_in_executor(self.executor, func)
+                    except Exception as exc:
+                        if not failures:
+                            failures.append(exc)
+                        log.error("Upload part failed: %s: %s", type(exc).__name__, exc)
+                    finally:
+                        queue.task_done()
 
             part_size = 512 * 1024
 
@@ -144,7 +193,6 @@ class SaveFile:
                 await self.storage.test_mode(), is_media=True
             )
             workers = [self.loop.create_task(worker(session)) for _ in range(workers_count)]
-            queue = asyncio.Queue(1)
 
             try:
                 await session.start()
@@ -176,29 +224,26 @@ class SaveFile:
                     await queue.put(rpc)
 
                     if is_missing_part:
+                        await queue.join()
+                        if failures:
+                            raise failures[0]
                         return
 
-                    if not is_big and not is_missing_part:
+                    if not is_big:
                         md5_sum.update(chunk)
 
                     file_part += 1
 
-                    if progress:
-                        func = functools.partial(
-                            progress,
-                            min(file_part * part_size, file_size),
-                            file_size,
-                            *progress_args
-                        )
-
-                        if inspect.iscoroutinefunction(progress):
-                            await func()
-                        else:
-                            await self.loop.run_in_executor(self.executor, func)
+                # queue.put() only means scheduled, not uploaded. All parts must
+                # finish successfully before returning InputFile/InputFileBig.
+                await queue.join()
+                if failures:
+                    raise failures[0]
             except StopTransmission:
                 raise
-            except Exception as e:
-                log.exception(e)
+            except Exception:
+                log.exception("File upload failed")
+                raise
             else:
                 if is_big:
                     return raw.types.InputFileBig(
