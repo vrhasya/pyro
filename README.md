@@ -8,7 +8,7 @@ Experimental development branch, not a production dependency.
 - Source version: 2.2.27
 - Telegram schema: layer 234
 
-The upstream source is pinned as a Git submodule in `upstream/kurigram`. This branch is a foundation only, not yet a modified Kurigram distribution. The upstream license applies to its source.
+The upstream source is pinned as a Git submodule in `upstream/kurigram`. The branch builds an experimental modified Kurigram distribution using a reviewed upload overlay. The pinned upstream checkout remains unmodified. The upstream license applies to its source.
 
 ## Local isolated setup (developer machine, not production VPS)
 
@@ -18,8 +18,10 @@ cd pyro-nextgen
 python3 -m venv .venv-nextgen
 . .venv-nextgen/bin/activate
 python -m pip install --upgrade pip
-python -m pip install './upstream/kurigram[fast]'
+python tools/prepare_nextgen.py
+python -m pip install './.nextgen-build/kurigram[fast]'
 python tools/verify_baseline.py
+python -m unittest discover -s tests -p 'test_upload_reliability.py' -v
 ```
 
 The verifier checks the source pin, schema layer, namespace, version and the inspected startup path. It is an offline static check, not a live Telegram or security certification.
@@ -35,4 +37,12 @@ The verifier checks the source pin, schema layer, namespace, version and the ins
 
 No deployment workflow, no changes to existing branches, no production services, credentials, databases, or sessions. Legacy security remediation must be reviewed separately; this branch does not alter installed legacy packages.
 
-The submodule is read-only as a baseline. Before integrating modifications, import the upstream source into this branch or build a separately reviewed patch series; do not commit changes to the upstream repository.
+The submodule is read-only. The build tool verifies the upstream commit and original upload file blob before copying the source into a disposable build tree. The overlay is not a runtime monkey patch. Use a fresh build tree for each build; never install in a production environment.
+
+## Phase 2: Upload Reliability V2 (experimental)
+
+- Preserves Kurigram's cached media session, semaphore, file size limits and 512 KiB parts.
+- Requires a positive acknowledgement before counting each part. Progress reports exact acknowledged bytes, including out-of-order completion and the final short part.
+- Retries the same part at most four times for Telegram FloodWait and FloodPremiumWait, honoring the server delay plus one second. Waits greater than 60 seconds or exhausted attempts are propagated; callers must respect the error. Cooldown is shared only by workers for a single file, not across clients or simultaneous files. Requests already in flight cannot be withdrawn.
+- Failure or cancellation cancels and joins sibling tasks; a failed upload does not return an InputFile. Cached sessions remain owned by Kurigram. Caller-provided file objects remain open.
+- Includes offline tests with simulated sessions; live performance and compatibility are not certified. CI is scoped to nextgen and uses no Telegram credentials.
