@@ -1,75 +1,38 @@
-<p align="center">
-    <a href="https://github.com/pyrogram_styled/pyrogram_styled">
-        <img src="https://docs.pyrogram_styled.org/_static/pyrogram_styled.png" alt="Pyrogram" width="128">
-    </a>
-    <br>
-    <b>Telegram MTProto API Framework for Python</b>
-    <br>
-    <a href="https://pyrogram_styled.org">
-        Homepage
-    </a>
-    •
-    <a href="https://docs.pyrogram_styled.org">
-        Documentation
-    </a>
-    •
-    <a href="https://docs.pyrogram_styled.org/releases">
-        Releases
-    </a>
-    •
-    <a href="https://t.me/pyrogram_styled">
-        News
-    </a>
-</p>
+# C1PH3R Pyro NextGen
 
-## Pyrogram
+Experimental development branch, not a production dependency.
 
-> Elegant, modern and asynchronous Telegram MTProto API framework in Python for users and bots
+## Pinned upstream
+- Kurigram: https://github.com/kurigram-org/kurigram
+- Commit: `ed92ab8a8ef8958d9ff909c772ff99c2ade1fdba` (2026-11-23 UTC)
+- Source version: 2.2.27
+- Telegram schema: layer 234
 
-``` python
-from pyrogram_styled import Client, filters
+The upstream source is pinned as a Git submodule in `upstream/kurigram`. This branch is a foundation only, not yet a modified Kurigram distribution. The upstream license applies to its source.
 
-app = Client("my_account")
+## Local isolated setup (developer machine, not production VPS)
 
-
-@app.on_message(filters.private)
-async def hello(client, message):
-    await message.reply("Hello from Pyrogram!")
-
-
-app.run()
+```sh
+git clone --branch nextgen --single-branch --recurse-submodules https://github.com/vrhasya/pyro.git pyro-nextgen
+cd pyro-nextgen
+python3 -m venv .venv-nextgen
+. .venv-nextgen/bin/activate
+python -m pip install --upgrade pip
+python -m pip install './upstream/kurigram[fast]'
+python tools/verify_baseline.py
 ```
 
-**Pyrogram** is a modern, elegant and asynchronous [MTProto API](https://docs.pyrogram_styled.org/topics/mtproto-vs-botapi)
-framework. It enables you to easily interact with the main Telegram API through a user account (custom client) or a bot
-identity (bot API alternative) using Python.
+The verifier checks the source pin, schema layer, namespace, version and the inspected startup path. It is an offline static check, not a live Telegram or security certification.
 
-### Support
+## Development phases
 
-If you'd like to support Pyrogram, you can consider:
+1. Baseline: pin upstream and verify isolated installation.
+2. Port and test upload acknowledgement, bounded retry, shared per-upload cooldown, and progress semantics against Kurigram's current media session API.
+3. Port opt-in parallel download with bounded concurrency and safe fallback.
+4. Design Styled compatibility and regression tests for Native Rich classes, callbacks and keyboard semantics.
+5. Offline tests and benchmarks; isolated staging with dedicated non-production credentials only after approval.
+6. Separate deployment approval and pinned artifacts for each production project.
 
-- [Become a GitHub sponsor](https://github.com/sponsors/delivrance).
-- [Become a LiberaPay patron](https://liberapay.com/delivrance).
-- [Become an OpenCollective backer](https://opencollective.com/pyrogram_styled).
+No deployment workflow, no changes to existing branches, no production services, credentials, databases, or sessions. Legacy security remediation must be reviewed separately; this branch does not alter installed legacy packages.
 
-### Key Features
-
-- **Ready**: Install Pyrogram with pip and start building your applications right away.
-- **Easy**: Makes the Telegram API simple and intuitive, while still allowing advanced usages.
-- **Elegant**: Low-level details are abstracted and re-presented in a more convenient way.
-- **Fast**: Boosted up by [TgCrypto](https://github.com/pyrogram_styled/tgcrypto), a high-performance cryptography library written in C.  
-- **Type-hinted**: Types and methods are all type-hinted, enabling excellent editor support.
-- **Async**: Fully asynchronous (also usable synchronously if wanted, for convenience).
-- **Powerful**: Full access to Telegram's API to execute any official client action and more.
-
-### Installing
-
-``` bash
-pip3 install pyrogram_styled
-```
-
-### Resources
-
-- Check out the docs at https://docs.pyrogram_styled.org to learn more about Pyrogram, get started right
-away and discover more in-depth material for building your client applications.
-- Join the official channel at https://t.me/pyrogram_styled and stay tuned for news, updates and announcements.
+The submodule is read-only as a baseline. Before integrating modifications, import the upstream source into this branch or build a separately reviewed patch series; do not commit changes to the upstream repository.

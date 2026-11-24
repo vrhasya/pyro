@@ -1,0 +1,3 @@
+[submodule "upstream/kurigram"]
+	path = upstream/kurigram
+	url = https://github.com/kurigram-org/kurigram.git
