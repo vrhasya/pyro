@@ -3,3 +3,7 @@ __pycache__/
 *.session
 *.session-*
 .env
+
+.nextgen-build/
+.pytest_cache/
+*.pyc
