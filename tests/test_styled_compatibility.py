@@ -117,6 +117,15 @@ class StyledCompatibilityTests(unittest.IsolatedAsyncioTestCase):
         decoded = raw.core.TLObject.read(io.BytesIO(wire.write()))
         self.assertEqual(decoded.blocks[4].buttons[0].type.data, b"open")
 
+    async def test_native_rich_custom_emoji(self):
+        emoji = styled.types.RichTextCustomEmoji(
+            custom_emoji_id="5458908492687497206", alternative_text="★"
+        )
+        wire = await emoji.write(None)
+        self.assertIsInstance(wire, raw.types.TextCustomEmoji)
+        self.assertEqual(wire.document_id, 5458908492687497206)
+        self.assertEqual(wire.alt, "★")
+
     async def test_html_and_markdown_input(self):
         html = await styled.types.InputRichMessage(html="<h1>Title</h1>").write(client=None)
         markdown = await styled.types.InputRichMessage(markdown="**Title**").write(client=None)
