@@ -1,0 +1,31 @@
+name: NextGen offline baseline
+on:
+  push:
+    branches: [nextgen]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  baseline:
+    if: github.ref == 'refs/heads/nextgen'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install pinned Kurigram in runner environment
+        run: |
+          python -m venv .venv-nextgen
+          .venv-nextgen/bin/python -m pip install './upstream/kurigram[fast]'
+      - name: Verify baseline without Telegram credentials or network sessions
+        run: |
+          .venv-nextgen/bin/python tools/verify_baseline.py
+          .venv-nextgen/bin/python -m pip check
