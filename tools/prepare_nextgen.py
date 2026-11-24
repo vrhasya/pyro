@@ -12,6 +12,9 @@ TARGETS = {
     Path("pyrogram/methods/advanced/save_file.py"): "a4c3546d5d1bbd9588d7e83724a3181619674602",
     Path("pyrogram/methods/messages/download_media.py"): "8ad53f9a92c49a1f6de9d1d35c2b199f33810895",
     Path("pyrogram/methods/messages/_nextgen_parallel_download.py"): None,
+    Path("pyrogram_styled/__init__.py"): None,
+    Path("pyrogram_styled/helpers/__init__.py"): None,
+    Path("pyrogram_styled/helpers/helpers.py"): None,
 }
 
 
@@ -37,11 +40,24 @@ def main():
         blob = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
         if blob != expected:
             raise SystemExit(f"Upstream source hash mismatch: {target}")
+    project = (UPSTREAM / "pyproject.toml").read_bytes()
+    project_blob = hashlib.sha1(b"blob " + str(len(project)).encode() + b"\0" + project).hexdigest()
+    if project_blob != "15f38ec8b93462fe1eee33882da8dec67be7bfa6":
+        raise SystemExit("Upstream packaging hash mismatch")
     if DEST.exists():
         raise SystemExit("Build tree exists; use a fresh checkout or remove only .nextgen-build")
     shutil.copytree(UPSTREAM, DEST, ignore=shutil.ignore_patterns(".git", "__pycache__", ".venv"))
     for target in TARGETS:
+        (DEST / target).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / "overlays" / target, DEST / target)
+    config = DEST / "pyproject.toml"
+    text = config.read_text(encoding="utf-8")
+    for old, new in (('packages = ["pyrogram"]', 'packages = ["pyrogram", "pyrogram_styled"]'),
+                     ('    "/pyrogram",', '    "/pyrogram",\n    "/pyrogram_styled",')):
+        if text.count(old) != 1:
+            raise SystemExit("Unexpected upstream package declaration")
+        text = text.replace(old, new)
+    config.write_text(text, encoding="utf-8")
     print("Prepared isolated NextGen source:", DEST)
 
 
