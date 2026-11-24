@@ -8,7 +8,7 @@ Experimental development branch, not a production dependency.
 - Source version: 2.2.27
 - Telegram schema: layer 234
 
-The upstream source is pinned as a Git submodule in `upstream/kurigram`. The branch builds an experimental modified Kurigram distribution using upload and download overlays. The pinned upstream checkout remains unmodified. The upstream license applies to its source.
+The upstream source is pinned as a Git submodule in `upstream/kurigram`. The branch builds an experimental modified Kurigram distribution using upload/download overlays and a scoped Styled compatibility facade. The pinned upstream checkout remains unmodified. The upstream license applies to its source.
 
 ## Local isolated setup (developer machine, not production VPS)
 
@@ -64,3 +64,59 @@ path = await client.download_media(message, parallel=True, parallel_workers=4)
 - Parallel jobs on one client are serialized; other normal transfers still share Kurigram's existing semaphore. The existing standard downloader is unchanged. Concurrent callers should use distinct final paths.
 - Local positional disk writes and fsync are synchronous to avoid background writes after cancellation. The implementation is bounded by the client's transmission limit; actual throughput, CPU and memory must be benchmarked separately.
 - Tests use fake sessions and local temporary files. No credentials, Telegram requests, VPS or database access. The package has not yet been approved for live use.
+
+## Phase 4: Styled Compatibility Adapter (experimental)
+
+The isolated wheel and source distribution now include a `pyrogram_styled` facade
+over the same Kurigram runtime. Do not install a legacy Styled or Navy package
+alongside this wheel. Both import names use the same Client, types, exceptions and
+raw constructors; no second registry or separate session is created.
+
+```python
+from pyrogram_styled import Client, types, filters, raw, enums
+from pyrogram_styled.helpers import ikb, rich_message_button
+
+keyboard = ikb([[("Open", "menu:open", "green", "5458908492687497206")]])
+rich = types.InputRichMessage(blocks=[
+    types.InputRichBlockSectionHeading(text="Dashboard", size=1),
+    types.InputRichBlockDivider(),
+    types.InputRichBlockTable(cells=[[types.RichBlockTableCell(text="Users", align="center")]]),
+    types.InputRichBlockButtons(buttons=[rich_message_button("Open", callback_data="menu:open")]),
+])
+# Use only with an explicitly authorized test client:
+# await client.send_rich_message(chat_id, rich, reply_markup=keyboard)
+```
+
+### Compatibility contract
+
+- Public imports: Client, types, errors, filters, handlers, enums, raw, utils, file_id;
+  selected nested public paths and common raw function namespaces. Unregistered deep
+  imports fail rather than loading a duplicate copy of the canonical module.
+- Helpers: btn, ikb, kb, kbtn, bki, ntb, array_chunk, force_reply, parse_style,
+  richbutton (raw PageButton), rich_message_button (high-level Kurigram button).
+  Use tuples for flat button specifications or nested rows for keyboard layouts.
+  Invalid or ambiguous style/icon options fail explicitly; callback size is checked.
+- HTML/Markdown InputRichMessage keyword construction, Native Rich block classes,
+  inline button styles, custom emoji icons, copy buttons, callback payloads, and
+  send/edit signatures are covered by offline tests. Telegram rendering and
+  callback delivery still require separate live testing.
+- Kurigram InputRichMessage has a different positional signature and asynchronous
+  write(client=...) contract. Use keywords and await serialization. Use
+  InputRichBlock* for outgoing blocks; RichBlock* is generally the received form.
+  Raw richbutton output is for raw composition; use rich_message_button for
+  high-level InputRichBlockButtons.
+- Legacy rich URL buttons automatically set a link flag; the adapter uses
+  Kurigram's default URL style instead, and only permits explicit LINK style
+  on callbacks. Styled password callbacks must be migrated to Kurigram's
+  callback_data plus requires_password API; do not pass old positional button fields.
+- Pyromod listen/ask helpers, legacy keyboard classes, arbitrary private import paths,
+  and session format migration are not provided by this facade. No remote command
+  handler is imported or registered by it. This is not a complete security audit.
+- Package installation still uses Kurigram's upstream distribution name and version
+  (2.2.27); do not distribute or install into existing environments. A distinct
+  release identifier and application-specific compatibility tests are required before
+  any deployment. No application repository or production dependency has been changed.
+
+Tests exercise real generated Layer 234 types in the isolated installed wheel,
+without opening a Telegram connection. No production credentials or database files
+are needed. CI results must be reviewed before promoting the branch.
