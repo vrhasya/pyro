@@ -1,66 +1,83 @@
-name: NextGen offline baseline
+name: NextGen offline validation
 on:
   push:
     branches: [nextgen]
+  pull_request:
+    branches: [nextgen]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   baseline:
-    if: github.ref == 'refs/heads/nextgen'
+    if: github.ref == 'refs/heads/nextgen' || (github.event_name == 'pull_request' && github.base_ref == 'nextgen' && github.head_ref == 'nextgen-validation' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
+      fail-fast: false
       matrix:
         python-version: ['3.12', '3.13']
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           submodules: recursive
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Build NextGen overlay in runner environment
+      - name: Build a single wheelhouse
         run: |
+          mkdir -p reports wheelhouse
+          git rev-parse HEAD > reports/source-commit.txt
+          git -C upstream/kurigram rev-parse HEAD > reports/upstream-commit.txt
+          python -VV > reports/python-version.txt
           python tools/prepare_nextgen.py
-          python -m venv .venv-nextgen
-          .venv-nextgen/bin/python -m pip install './.nextgen-build/kurigram[fast]'
-      - name: Verify baseline without Telegram credentials or network sessions
-        run: |
-          .venv-nextgen/bin/python tools/verify_baseline.py
-          .venv-nextgen/bin/python -m pip check
-
-      - name: Upload, download and Styled compatibility regression tests (offline)
-        run: .venv-nextgen/bin/python -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Build and test offline staging wheelhouse
-        if: matrix.python-version == '3.12'
-        run: |
-          mkdir -p wheelhouse reports
-          .venv-nextgen/bin/python -m pip wheel --wheel-dir wheelhouse './.nextgen-build/kurigram[fast]'
+          python -m pip wheel --wheel-dir wheelhouse './.nextgen-build/kurigram[fast]' 2>&1 | tee reports/build.log
           wheel="$(find wheelhouse -maxdepth 1 -name 'c1ph3r_pyro_nextgen-*.whl' -print -quit)"
           test -n "$wheel"
+          test "$(find wheelhouse -maxdepth 1 -name 'c1ph3r_pyro_nextgen-*.whl' | wc -l)" -eq 1
           sha256sum wheelhouse/*.whl > reports/SHA256SUMS
-          bash tools/stage_offline.sh "$wheel" wheelhouse "$(sha256sum "$wheel" | cut -d' ' -f1)"
-          .venv-nextgen/bin/python -m pip freeze > reports/nextgen-dependencies.txt
-      - name: Compare synthetic transfers with pinned upstream
+          sha256sum -c reports/SHA256SUMS
+      - name: Install exact wheel offline
+        run: |
+          python -m venv .venv-nextgen
+          wheel="$(find wheelhouse -maxdepth 1 -name 'c1ph3r_pyro_nextgen-*.whl' -print -quit)"
+          .venv-nextgen/bin/python -m pip install --no-index --only-binary=:all: --find-links wheelhouse "$wheel[fast]"
+          .venv-nextgen/bin/python -m pip check
+          .venv-nextgen/bin/python tools/verify_baseline.py 2>&1 | tee reports/baseline-checks.log
+          .venv-nextgen/bin/python -m pip list --format=freeze > reports/nextgen-dependencies.txt
+      - name: Regression tests (offline)
+        run: |
+          .venv-nextgen/bin/python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee reports/regression.log
+      - name: Repeat in disposable staging environment
+        run: |
+          sha256sum -c reports/SHA256SUMS
+          wheel="$(find wheelhouse -maxdepth 1 -name 'c1ph3r_pyro_nextgen-*.whl' -print -quit)"
+          bash tools/stage_offline.sh "$wheel" wheelhouse "$(sha256sum "$wheel" | cut -d' ' -f1)" 2>&1 | tee reports/stage-offline.log
+      - name: Compare synthetic transfers with identical runtime dependencies
         if: matrix.python-version == '3.12'
         run: |
+          mkdir -p baseline-wheel
+          python -m pip wheel --no-deps --wheel-dir baseline-wheel './upstream/kurigram'
           python -m venv .venv-upstream
-          .venv-upstream/bin/python -m pip install './upstream/kurigram[fast]'
+          wheel="$(find baseline-wheel -maxdepth 1 -name 'kurigram-*.whl' -print -quit)"
+          test -n "$wheel"
+          .venv-upstream/bin/python -m pip install --no-index --only-binary=:all: --find-links wheelhouse "$wheel[fast]"
+          .venv-upstream/bin/python -m pip check
+          .venv-upstream/bin/python -m pip list --format=freeze > reports/baseline-dependencies.txt
           .venv-upstream/bin/python tools/benchmark_offline.py --mode baseline --output reports/baseline.json
           .venv-nextgen/bin/python tools/benchmark_offline.py --mode nextgen --output reports/nextgen.json
-      - name: Audit resolved runtime dependencies
-        if: matrix.python-version == '3.12'
+      - name: Audit exact tested runtime dependencies
         run: |
-          .venv-nextgen/bin/python -m pip list --format=freeze | grep -viE '^(c1ph3r-pyro-nextgen|pip|setuptools|wheel)==' > reports/audit-requirements.txt
+          grep -viE '^(c1ph3r-pyro-nextgen|pip|setuptools|wheel)==' reports/nextgen-dependencies.txt > reports/audit-requirements.txt
           python -m venv .venv-audit
           .venv-audit/bin/python -m pip install pip-audit
           .venv-audit/bin/python -m pip_audit --no-deps --disable-pip -r reports/audit-requirements.txt --format json -o reports/dependency-audit.json
-      - name: Retain test evidence (not a deployment)
-        if: always() && matrix.python-version == '3.12'
+      - name: Retain validation evidence (not a release)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nextgen-offline-evidence
+          name: nextgen-validation-py${{ matrix.python-version }}
           path: reports/
           if-no-files-found: warn
