@@ -2,6 +2,13 @@
 
 Experimental development branch, not a production dependency.
 
+## Alpha package identity
+
+- Distribution: `c1ph3r-pyro-nextgen`
+- Version: `2.2.27.dev1+nextgen`
+- Runtime namespaces: `pyrogram` and `pyrogram_styled` (same engine)
+- Install only in a new virtual environment; never co-install with legacy Pyrogram or Kurigram.
+
 ## Pinned upstream
 - Kurigram: https://github.com/kurigram-org/kurigram
 - Commit: `ed92ab8a8ef8958d9ff909c772ff99c2ade1fdba` (2026-11-23 UTC)
@@ -112,11 +119,30 @@ rich = types.InputRichMessage(blocks=[
 - Pyromod listen/ask helpers, legacy keyboard classes, arbitrary private import paths,
   and session format migration are not provided by this facade. No remote command
   handler is imported or registered by it. This is not a complete security audit.
-- Package installation still uses Kurigram's upstream distribution name and version
-  (2.2.27); do not distribute or install into existing environments. A distinct
-  release identifier and application-specific compatibility tests are required before
+- The distinct alpha distribution identity is now set by the isolated build tool.
+  Application-specific compatibility tests and release approval remain required before
   any deployment. No application repository or production dependency has been changed.
 
 Tests exercise real generated Layer 234 types in the isolated installed wheel,
 without opening a Telegram connection. No production credentials or database files
 are needed. CI results must be reviewed before promoting the branch.
+
+## Phases 5–8: Security, benchmark, staging and release gates
+
+- Phase 5: hash-guarded alpha package identity, targeted packet/update log hardening,
+  namespace ownership checks, seven offline security guards, and resolved dependency
+  audit in CI. This is not a full security certification; session migration is not tested.
+- Phase 6: synthetic benchmark compares pinned Kurigram and NextGen in separate venvs.
+  Simulated upload/download latency, exact SHA-256 content checks, throughput, CPU
+  time, worker count and cumulative process peak RSS are recorded in JSON. No claims
+  about live Telegram or VPS performance are made.
+- Phase 7: disposable offline wheel acceptance script verifies wheel hash, installs
+  from a local wheelhouse without package-index access, clears inherited credentials,
+  and runs regression tests. Real staging awaits a separately authorized test account.
+- Phase 8: documented approval, backup, compatibility and rollback gate only.
+  No publication or deployment performed.
+
+See [release and staging gate](docs/nextgen-release-gate.md).
+CI evidence is retained in the nextgen-offline-evidence artifact when generated.
+A passing CI run, dependency audit review and application-specific compatibility
+verification are mandatory before live staging. Until then all tests are unverified.
