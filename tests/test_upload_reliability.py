@@ -4,7 +4,6 @@ import hashlib
 import io
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
 
 from pyrogram import StopTransmission, raw
 from pyrogram.errors import FloodWait, FloodPremiumWait
@@ -97,6 +96,25 @@ class UploadTests(unittest.IsolatedAsyncioTestCase):
         client = FakeClient(behavior)
         await asyncio.wait_for(client.save_file(io.BytesIO(b"x")), 5)
         self.assertEqual(client.session.calls, [(0, 0), (0, 0)])
+
+    async def test_parallel_workers_observe_shared_cooldown(self):
+        loop = asyncio.get_running_loop()
+        first_flood = asyncio.Event()
+        times = []
+        start = loop.time()
+        async def behavior(rpc):
+            times.append((rpc.file_part, loop.time() - start))
+            if rpc.file_part == 0 and not first_flood.is_set():
+                first_flood.set()
+                raise FloodPremiumWait(1)
+            if rpc.file_part in (1, 2, 3):
+                await first_flood.wait()
+                await asyncio.sleep(0.05)
+            return True
+        client = FakeClient(behavior)
+        await asyncio.wait_for(client.save_file(io.BytesIO(b"x" * PART * 21)), 6)
+        self.assertEqual(sum(p == 0 for p, _ in times), 2)
+        self.assertTrue(all(t >= 1.9 for p, t in times if p >= 4))
 
     async def test_long_wait_propagates_without_retry(self):
         async def behavior(rpc):
