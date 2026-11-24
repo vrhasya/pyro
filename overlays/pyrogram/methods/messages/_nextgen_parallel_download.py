@@ -25,6 +25,8 @@ class IncompleteRange(OSError):
 
 
 async def download_parallel(client, packet, workers=2):
+    if not isinstance(workers, int) or isinstance(workers, bool) or not 2 <= workers <= MAX_WORKERS:
+        raise ValueError("parallel_workers must be between 2 and 4")
     file_id, directory, file_name, in_memory, file_size, progress, args = packet
     if (
         in_memory or not isinstance(file_size, int) or file_size < MIN_SIZE
@@ -64,6 +66,7 @@ async def download_parallel(client, packet, workers=2):
         cursor = 0
         count = (file_size + CHUNK_SIZE - 1) // CHUNK_SIZE
         fallback = False
+        concurrent_error = None
         try:
             os.ftruncate(fd, file_size)
 
@@ -131,15 +134,15 @@ async def download_parallel(client, packet, workers=2):
                         if isinstance(result, BaseException) and not isinstance(
                             result, (IncompleteRange, asyncio.CancelledError)
                         ):
-                            fallback = False
-                            if isinstance(result, StopTransmission):
-                                return None
-                            # Cleanup still runs before this exception is raised.
-                            os.close(fd)
-                            temp.unlink(missing_ok=True)
-                            raise result
+                            concurrent_error = result
+                            break
             os.close(fd)
             temp.unlink(missing_ok=True)
+
+        if concurrent_error is not None:
+            if isinstance(concurrent_error, StopTransmission):
+                return None
+            raise concurrent_error
 
         if fallback:
             log.warning("Incomplete parallel range; reverting to standard downloader")
