@@ -33,3 +33,34 @@ jobs:
 
       - name: Upload, download and Styled compatibility regression tests (offline)
         run: .venv-nextgen/bin/python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Build and test offline staging wheelhouse
+        if: matrix.python-version == '3.12'
+        run: |
+          mkdir -p wheelhouse reports
+          .venv-nextgen/bin/python -m pip wheel --wheel-dir wheelhouse './.nextgen-build/kurigram[fast]'
+          wheel="$(find wheelhouse -maxdepth 1 -name 'c1ph3r_pyro_nextgen-*.whl' -print -quit)"
+          test -n "$wheel"
+          sha256sum wheelhouse/*.whl > reports/SHA256SUMS
+          bash tools/stage_offline.sh "$wheel" wheelhouse "$(sha256sum "$wheel" | cut -d' ' -f1)"
+          .venv-nextgen/bin/python -m pip freeze > reports/nextgen-dependencies.txt
+      - name: Compare synthetic transfers with pinned upstream
+        if: matrix.python-version == '3.12'
+        run: |
+          python -m venv .venv-upstream
+          .venv-upstream/bin/python -m pip install './upstream/kurigram[fast]'
+          .venv-upstream/bin/python tools/benchmark_offline.py --mode baseline --output reports/baseline.json
+          .venv-nextgen/bin/python tools/benchmark_offline.py --mode nextgen --output reports/nextgen.json
+      - name: Audit resolved runtime dependencies
+        if: matrix.python-version == '3.12'
+        run: |
+          .venv-nextgen/bin/python -m pip list --format=freeze | grep -viE '^(c1ph3r-pyro-nextgen|pip|setuptools|wheel)==' > reports/audit-requirements.txt
+          python -m venv .venv-audit
+          .venv-audit/bin/python -m pip install pip-audit
+          .venv-audit/bin/python -m pip_audit --no-deps --disable-pip -r reports/audit-requirements.txt --format json -o reports/dependency-audit.json
+      - name: Retain test evidence (not a deployment)
+        if: always() && matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextgen-offline-evidence
+          path: reports/
+          if-no-files-found: warn
