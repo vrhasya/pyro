@@ -31,5 +31,5 @@ jobs:
           .venv-nextgen/bin/python tools/verify_baseline.py
           .venv-nextgen/bin/python -m pip check
 
-      - name: Upload reliability regression tests (offline)
-        run: .venv-nextgen/bin/python -m unittest discover -s tests -p 'test_upload_reliability.py' -v
+      - name: Upload and download regression tests (offline)
+        run: .venv-nextgen/bin/python -m unittest discover -s tests -p 'test_*.py' -v
