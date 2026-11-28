@@ -965,7 +965,8 @@ class Client(Methods):
         limit: int = 0,
         offset: int = 0,
         progress: Callable = None,
-        progress_args: tuple = ()
+        progress_args: tuple = (),
+        *, beta_strict: bool = False
     ) -> Optional[AsyncGenerator[bytes, None]]:
         async with self.get_file_semaphore:
             file_type = file_id.file_type
@@ -1179,6 +1180,8 @@ class Client(Methods):
             except pyrogram.StopTransmission:
                 raise
             except Exception as e:
+                if beta_strict:
+                    raise
                 log.exception(e)
 
     def guess_mime_type(self, filename: str) -> Optional[str]:
