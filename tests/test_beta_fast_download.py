@@ -59,6 +59,11 @@ class DummyClient:
 
     async def handle_download(self, packet):
         self.fallback_calls += 1
+        if self.fail:
+            # Simulate the legacy downloader reporting a truncated result.
+            path = Path(packet[1], packet[2])
+            path.write_bytes(b"partial")
+            return str(path)
         return "STANDARD_FALLBACK"
 
 
@@ -152,7 +157,7 @@ class ParallelCopyTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             packet = (object(), directory, "test.bin", False, size, None, ())
             output = await module.download_media_parallel(client, packet, workers=2)
-            self.assertEqual(output, "STANDARD_FALLBACK")
+            self.assertIsNone(output)
             self.assertEqual(client.fallback_calls, 1)
             self.assertFalse(Path(directory, "test.bin.temp").exists())
             self.assertFalse(Path(directory, "test.bin").exists())
