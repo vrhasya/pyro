@@ -1,5 +1,7 @@
 """Offline tests: no Telegram, VPS, session or production access."""
 import asyncio
+import ast
+import contextlib
 import importlib.util
 import os
 from pathlib import Path
@@ -7,7 +9,7 @@ import tempfile
 import unittest
 import sys
 import types
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 from concurrent.futures import ThreadPoolExecutor
 
 MODULE_PATH = (
@@ -162,6 +164,81 @@ class ParallelCopyTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(Path(directory, "test.bin.temp").exists())
             self.assertFalse(Path(directory, "test.bin").exists())
         client.executor.shutdown(wait=True)
+
+
+class MediaRequestDeadlineTests(unittest.IsolatedAsyncioTestCase):
+    def isolate_invoke(self):
+        # Test the real method without a Telegram connection or generated API.
+        source = MODULE_PATH.parents[2] / "session" / "session.py"
+        tree = ast.parse(source.read_text())
+        session = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Session")
+        method = next(n for n in session.body if isinstance(n, ast.AsyncFunctionDef) and n.name == "invoke")
+        functions = types.SimpleNamespace(
+            InvokeWithoutUpdates=type("InvokeWithoutUpdates", (), {}),
+            InvokeWithTakeout=type("InvokeWithTakeout", (), {}),
+        )
+        namespace = dict(asyncio=asyncio, contextlib=contextlib, raw=types.SimpleNamespace(functions=functions),
+                         TLObject=object, MAX_RETRIES=10, WAIT_TIMEOUT=15, SLEEP_THRESHOLD=10,
+                         Session=types.SimpleNamespace(MAX_RETRIES=10), log=Mock(),
+                         FloodWait=errors.FloodWait, FloodPremiumWait=errors.FloodPremiumWait,
+                         InternalServerError=errors.InternalServerError, ServiceUnavailable=errors.ServiceUnavailable)
+        exec(compile(ast.Module(body=[method], type_ignores=[]), str(source), "exec"), namespace)
+        return namespace["invoke"]
+
+    def session(self, send):
+        started = asyncio.Event()
+        started.set()
+        return types.SimpleNamespace(
+            is_started=started, WAIT_TIMEOUT=0.01,
+            connection=types.SimpleNamespace(protocol=types.SimpleNamespace(closed=False)),
+            client=types.SimpleNamespace(name="offline"), send=send, restart=AsyncMock(),
+        )
+
+    async def test_timeout_cancels_rpc_and_reconnects(self):
+        invoke = self.isolate_invoke()
+        attempts = 0
+        cancelled = asyncio.Event()
+
+        async def send(query, timeout):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                try:
+                    await asyncio.sleep(60)
+                finally:
+                    cancelled.set()
+            return "chunk"
+
+        session = self.session(send)
+        query = types.SimpleNamespace(QUALNAME="functions.upload.GetFile")
+        self.assertEqual(await invoke(session, query, retries=3, sleep_threshold=0,
+                                      beta_request_deadline=0.01), "chunk")
+        self.assertTrue(cancelled.is_set())
+        self.assertEqual(attempts, 2)
+        session.restart.assert_awaited_once()
+
+    async def test_floodwait_is_propagated_without_reconnect(self):
+        invoke = self.isolate_invoke()
+        exc = errors.FloodWait("wait")
+        exc.value = 30
+        session = self.session(AsyncMock(side_effect=exc))
+        query = types.SimpleNamespace(QUALNAME="functions.upload.GetFile")
+        with self.assertRaises(errors.FloodWait):
+            await invoke(session, query, retries=3, sleep_threshold=0, beta_request_deadline=0.01)
+        session.restart.assert_not_awaited()
+        session.send.assert_awaited_once()
+
+    async def test_default_has_no_beta_deadline(self):
+        invoke = self.isolate_invoke()
+
+        async def send(query, timeout):
+            await asyncio.sleep(0.02)
+            return "default"
+
+        session = self.session(send)
+        query = types.SimpleNamespace(QUALNAME="functions.upload.GetFile")
+        self.assertEqual(await invoke(session, query), "default")
+        session.restart.assert_not_awaited()
 
 
 if __name__ == "__main__":
