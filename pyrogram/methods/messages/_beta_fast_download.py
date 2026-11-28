@@ -154,9 +154,19 @@ async def _parallel_file(client, packet, workers):
         # Warm the media session before opening simultaneous range requests.
         if not await fetch_range(_Range(0, 1)):
             raise ParallelDownloadIncomplete("Media session warmup failed")
-        async with asyncio.TaskGroup() as group:
-            for _ in range(min(workers, max(0, number_of_chunks - 1))):
-                group.create_task(worker())
+        tasks = [
+            asyncio.create_task(worker())
+            for _ in range(min(workers, max(0, number_of_chunks - 1)))
+        ]
+        try:
+            await asyncio.gather(*tasks)
+        finally:
+            # Gather alone does not cancel siblings on failure. Drain before
+            # closing the shared fd, including on Python 3.10.
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
         if degraded:
             log.warning("Beta recovery | switching to sequential ranges | retained=%s/%s",
