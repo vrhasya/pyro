@@ -2,6 +2,8 @@ name: Beta fast download - isolated tests
 
 on:
   push:
+    branches: [beta-fast-download, 'feat/beta-range-recovery-*']
+  pull_request:
     branches: [beta-fast-download]
   workflow_dispatch:
 
@@ -21,7 +23,7 @@ jobs:
           python-version: '3.12'
       - name: Syntax checks
         run: |
-          python -m py_compile pyrogram/methods/messages/_beta_fast_download.py pyrogram/methods/messages/download_media.py tests/test_beta_fast_download.py
+          python -m py_compile pyrogram/client.py pyrogram/methods/messages/_beta_fast_download.py pyrogram/methods/messages/download_media.py tests/test_beta_fast_download.py
       - name: Test bounded parallel file assembly, progress, and fallback
         run: |
           python -m unittest discover -v -s tests -p test_beta_fast_download.py
