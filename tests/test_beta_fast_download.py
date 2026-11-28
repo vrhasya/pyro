@@ -138,6 +138,84 @@ class ParallelCopyTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(sorted(client.delivered), list(range(13)))
             self.assertEqual(client.fallback_calls, 0)
 
+    async def test_small_sequential_recovery_resumes_exact_offset(self):
+        size = 3576741
+        data = b"".join(bytes([i]) * module.CHUNK_SIZE for i in range(4))[:size]
+        client = DummyClient(data, failures={2: 1})
+        self.addCleanup(client.executor.shutdown, wait=True)
+        progress = []
+
+        async def callback(current, total):
+            progress.append(current)
+
+        with tempfile.TemporaryDirectory() as directory:
+            packet = (object(), directory, "small.bin", False, size, callback, ())
+            path = await module.download_media_parallel(client, packet, workers=1, strict_recovery=True)
+            self.assertEqual(Path(path).read_bytes(), data)
+            self.assertEqual(client.delivered, [0, 1, 2, 3])
+            self.assertEqual(client.offsets, [0, 1, 2])
+            self.assertEqual(client.max_parallel, 1)
+            self.assertEqual(progress, sorted(progress))
+            self.assertEqual(progress[-1], size)
+            self.assertEqual(client.fallback_calls, 0)
+
+    async def test_strict_chunk_deadline_resumes_after_stall(self):
+        size = module.CHUNK_SIZE * 3 + 17
+        client = DummyClient(b"X" * size)
+        self.addCleanup(client.executor.shutdown, wait=True)
+        original = client.get_file
+        stalled = False
+
+        async def stall_once(file_id, file_size, limit, offset, **kwargs):
+            nonlocal stalled
+            async with contextlib.aclosing(original(file_id, file_size, limit, offset, **kwargs)) as stream:
+                async for chunk in stream:
+                    if offset == 1 and not stalled:
+                        stalled = True
+                        await asyncio.sleep(60)
+                    yield chunk
+
+        client.get_file = stall_once
+        with tempfile.TemporaryDirectory() as directory, patch.object(module, "CHUNK_DEADLINE", 0.1):
+            packet = (object(), directory, "timeout.bin", False, size, None, ())
+            path = await module.download_media_parallel(client, packet, workers=1, strict_recovery=True)
+            self.assertEqual(Path(path).read_bytes(), client.data)
+            self.assertEqual(client.offsets, [0, 1, 1])
+            self.assertEqual(client.fallback_calls, 0)
+
+    async def test_strict_exhaustion_never_uses_legacy(self):
+        size = module.CHUNK_SIZE * 3
+        client = DummyClient(b"X" * size, fail=True)
+        self.addCleanup(client.executor.shutdown, wait=True)
+        with tempfile.TemporaryDirectory() as directory:
+            packet = (object(), directory, "failed.bin", False, size, None, ())
+            self.assertIsNone(await module.download_media_parallel(
+                client, packet, workers=1, strict_recovery=True))
+            self.assertEqual(client.offsets, [0, 1, 1, 1])
+            self.assertEqual(client.fallback_calls, 0)
+            self.assertFalse(list(Path(directory).iterdir()))
+
+    async def test_strict_parallel_retains_successful_chunks(self):
+        size = module.CHUNK_SIZE * 10 + 17
+        client = DummyClient(b"P" * size, failures={2: 1})
+        self.addCleanup(client.executor.shutdown, wait=True)
+        with tempfile.TemporaryDirectory() as directory:
+            packet = (object(), directory, "parallel.bin", False, size, None, ())
+            path = await module.download_media_parallel(client, packet, workers=2, strict_recovery=True)
+            self.assertEqual(Path(path).read_bytes(), client.data)
+            self.assertEqual(sorted(client.delivered), list(range(11)))
+            self.assertEqual(client.max_parallel, 2)
+            self.assertEqual(client.fallback_calls, 0)
+
+    async def test_strict_unknown_size_does_not_use_legacy(self):
+        client = DummyClient(b"A")
+        self.addCleanup(client.executor.shutdown, wait=True)
+        with tempfile.TemporaryDirectory() as directory:
+            packet = (object(), directory, "unknown.bin", False, 0, None, ())
+            self.assertIsNone(await module.download_media_parallel(
+                client, packet, workers=1, strict_recovery=True))
+            self.assertEqual(client.fallback_calls, 0)
+
     async def test_cancel_cleans_temp_without_fallback(self):
         size = module.CHUNK_SIZE * 9
         client = DummyClient(b"X" * size)
