@@ -38,7 +38,8 @@ class DownloadMedia:
         progress: Callable = None,
         progress_args: tuple = (),
         beta_parallel: bool = False,
-        beta_parallel_workers: int = 2
+        beta_parallel_workers: int = 2,
+        beta_recovery: bool = False
     ) -> Optional[Union[str, BinaryIO]]:
         """Download the media from a message.
 
@@ -76,6 +77,11 @@ class DownloadMedia:
 
             beta_parallel_workers (``int``, *optional*):
                 Number of parallel range requests (2 to 4). Default: 2.
+
+            beta_recovery (``bool``, *optional*):
+                Opt in to bounded chunk recovery for known-size disk downloads, including small files.
+                Uses one worker unless beta_parallel is enabled. Exhausted recovery returns None.
+                Only applies to blocking disk downloads; defaults to False.
 
             progress_args (``tuple``, *optional*):
                 Extra custom arguments for the progress callback function.
@@ -187,7 +193,13 @@ class DownloadMedia:
             )
 
         packet = (file_id_obj, directory, file_name, in_memory, file_size, progress, progress_args)
-        if beta_parallel and block:
+        if beta_recovery and block and not in_memory:
+            from ._beta_fast_download import download_media_parallel
+            downloader = download_media_parallel(
+                self, packet, workers=beta_parallel_workers if beta_parallel else 1,
+                strict_recovery=True
+            )
+        elif beta_parallel and block:
             from ._beta_fast_download import download_media_parallel
             downloader = download_media_parallel(self, packet, workers=beta_parallel_workers)
         else:

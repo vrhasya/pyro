@@ -22,6 +22,7 @@ MIN_SIZE = 8 * CHUNK_SIZE
 MAX_WORKERS = 4
 CHUNKS_PER_RANGE = 4
 MAX_ATTEMPTS = 3
+CHUNK_DEADLINE = 90  # Additional bound around session setup and each next chunk.
 
 
 class ParallelDownloadIncomplete(OSError):
@@ -55,12 +56,12 @@ async def _disk_call(func, *args):
         raise
 
 
-async def _parallel_file(client, packet, workers):
+async def _parallel_file(client, packet, workers, *, strict_recovery=False):
     file_id, directory, file_name, in_memory, file_size, progress, progress_args = packet
-    if in_memory or not isinstance(file_size, int) or file_size < MIN_SIZE:
+    if in_memory or not isinstance(file_size, int) or file_size <= 0 or (not strict_recovery and file_size < MIN_SIZE):
         return await client.handle_download(packet)
 
-    workers = max(2, min(MAX_WORKERS, int(workers)))
+    workers = max(1 if strict_recovery else 2, min(MAX_WORKERS, int(workers)))
     directory = os.fspath(directory)
     os.makedirs(directory, exist_ok=True)
     final_path = os.path.abspath(re.sub(r"\\", "/", os.path.join(directory, file_name)))
@@ -94,7 +95,16 @@ async def _parallel_file(client, packet, workers):
                     file_id, file_size, limit=part.stop - part.next_chunk,
                     offset=part.next_chunk, beta_strict=True
                 )) as stream:
-                    async for chunk in stream:
+                    while True:
+                        try:
+                            if strict_recovery:
+                                chunk = await asyncio.wait_for(stream.__anext__(), timeout=CHUNK_DEADLINE)
+                            else:
+                                chunk = await stream.__anext__()
+                        except StopAsyncIteration:
+                            break
+                        except asyncio.TimeoutError as exc:
+                            raise TimeoutError("Beta chunk deadline exceeded") from exc
                         if part.next_chunk >= part.stop:
                             raise ParallelDownloadIncomplete("Unexpected extra Telegram chunk")
                         position = part.next_chunk * CHUNK_SIZE
@@ -169,6 +179,8 @@ async def _parallel_file(client, packet, workers):
             await asyncio.gather(*tasks, return_exceptions=True)
 
         if degraded:
+            if strict_recovery and workers == 1:
+                raise ParallelDownloadIncomplete(f"Sequential recovery exhausted at chunk {failed[0].next_chunk}")
             log.warning("Beta recovery | switching to sequential ranges | retained=%s/%s",
                         completed, file_size)
             # Retry only the unfilled tails of failed ranges and ranges not
@@ -197,10 +209,15 @@ async def _parallel_file(client, packet, workers):
             os.unlink(temp_path)
 
 
-async def download_media_parallel(client, packet, workers=2):
-    """Try recovery in-place, then use the original downloader on failure."""
+async def download_media_parallel(client, packet, workers=2, *, strict_recovery=False):
+    """Recover known-size disk downloads; strict mode never falls back to unbounded legacy I/O."""
     file_id, directory, file_name, in_memory, file_size, progress, args = packet
-    if in_memory or not isinstance(file_size, int) or file_size < MIN_SIZE or not hasattr(os, "pwrite"):
+    if in_memory or not isinstance(file_size, int) or file_size <= 0 or not hasattr(os, "pwrite"):
+        if strict_recovery:
+            log.warning("Beta recovery | unsupported download (size/path/platform); refusing unbounded fallback")
+            return None
+        return await client.handle_download(packet)
+    if not strict_recovery and file_size < MIN_SIZE:
         return await client.handle_download(packet)
 
     lock = getattr(client, "_beta_parallel_download_lock", None)
@@ -210,10 +227,13 @@ async def download_media_parallel(client, packet, workers=2):
 
     async with lock:
         try:
-            return await _parallel_file(client, packet, workers)
+            return await _parallel_file(client, packet, workers, strict_recovery=True) if strict_recovery else await _parallel_file(client, packet, workers)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            if strict_recovery:
+                log.warning("Beta recovery | exhausted; discarding incomplete download | %s", exc)
+                return None
             log.warning("Beta recovery exhausted (%s); restarting with standard downloader", exc)
             await _emit_progress(client, progress, args, 0, file_size)
             result = await client.handle_download(packet)
