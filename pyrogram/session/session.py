@@ -458,10 +458,10 @@ class Session:
                             self.send(query, timeout=timeout),
                             timeout=beta_request_deadline,
                         )
-                    except asyncio.TimeoutError:
-                        log.warning("Beta media request deadline | %s | %ss",
+                    except asyncio.TimeoutError as exc:
+                        log.warning("Beta media request timeout | %s | deadline=%ss",
                                     query_name, beta_request_deadline)
-                        raise
+                        raise TimeoutError("Beta media request deadline exceeded") from exc
                 return await self.send(query, timeout=timeout)
             except (FloodWait, FloodPremiumWait) as e:
                 amount = e.value
