@@ -965,8 +965,17 @@ class Client(Methods):
         limit: int = 0,
         offset: int = 0,
         progress: Callable = None,
-        progress_args: tuple = ()
+        progress_args: tuple = (),
+        *, beta_strict: bool = False
     ) -> Optional[AsyncGenerator[bytes, None]]:
+        async def media_invoke(session, query, **kwargs):
+            if beta_strict:
+                # Let FloodWait reach the range coordinator; its cooldown is
+                # separate from the network deadline and never cut short.
+                kwargs.update(retries=3, timeout=15, sleep_threshold=0,
+                              beta_request_deadline=45)
+            return await session.invoke(query, **kwargs)
+
         async with self.get_file_semaphore:
             file_type = file_id.file_type
 
@@ -1049,7 +1058,7 @@ class Client(Methods):
                         else:
                             raise AuthBytesInvalid
 
-                r = await session.invoke(
+                r = await media_invoke(session,
                     raw.functions.upload.GetFile(
                         location=location,
                         offset=offset_bytes,
@@ -1085,7 +1094,7 @@ class Client(Methods):
                         if len(chunk) < chunk_size or current >= total:
                             break
 
-                        r = await session.invoke(
+                        r = await media_invoke(session,
                             raw.functions.upload.GetFile(
                                 location=location,
                                 offset=offset_bytes,
@@ -1104,7 +1113,7 @@ class Client(Methods):
                         await cdn_session.start()
 
                         while True:
-                            r2 = await cdn_session.invoke(
+                            r2 = await media_invoke(cdn_session,
                                 raw.functions.upload.GetCdnFile(
                                     file_token=r.file_token,
                                     offset=offset_bytes,
@@ -1114,7 +1123,7 @@ class Client(Methods):
 
                             if isinstance(r2, raw.types.upload.CdnFileReuploadNeeded):
                                 try:
-                                    await session.invoke(
+                                    await media_invoke(session,
                                         raw.functions.upload.ReuploadCdnFile(
                                             file_token=r.file_token,
                                             request_token=r2.request_token
@@ -1137,7 +1146,7 @@ class Client(Methods):
                                 )
                             )
 
-                            hashes = await session.invoke(
+                            hashes = await media_invoke(session,
                                 raw.functions.upload.GetCdnFileHashes(
                                     file_token=r.file_token,
                                     offset=offset_bytes
@@ -1179,6 +1188,8 @@ class Client(Methods):
             except pyrogram.StopTransmission:
                 raise
             except Exception as e:
+                if beta_strict:
+                    raise
                 log.exception(e)
 
     def guess_mime_type(self, filename: str) -> Optional[str]:

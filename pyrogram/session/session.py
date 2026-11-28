@@ -362,56 +362,60 @@ class Session:
 
         log.debug("Sent: %s", message)
 
-        payload = await self.client.loop.run_in_executor(
-            pyrogram.crypto_executor,
-            mtproto.pack,
-            message,
-            self.salt,
-            self.session_id,
-            self.auth_key,
-            self.auth_key_id,
-        )
-
         try:
-            await self.connection.send(payload)
-        except OSError as e:
+            payload = await self.client.loop.run_in_executor(
+                pyrogram.crypto_executor,
+                mtproto.pack,
+                message,
+                self.salt,
+                self.session_id,
+                self.auth_key,
+                self.auth_key_id,
+            )
+
+            try:
+                await self.connection.send(payload)
+            except OSError as e:
+                self.results.pop(msg_id, None)
+                raise e
+
+            if wait_response:
+                with contextlib.suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(self.results[msg_id].event.wait(), timeout)
+
+                result = self.results.pop(msg_id).value
+
+                if result is None:
+                    raise TimeoutError("Request timed out")
+
+                if isinstance(result, raw.types.RpcError):
+                    if isinstance(
+                        data,
+                        (
+                            raw.functions.InvokeWithoutUpdates,
+                            raw.functions.InvokeWithTakeout,
+                        ),
+                    ):
+                        data = data.query
+
+                    RPCError.raise_it(result, type(data))
+
+                if isinstance(result, raw.types.BadMsgNotification):
+                    log.warning(
+                        "%s: %s",
+                        BadMsgNotification.__name__,
+                        BadMsgNotification(result.error_code),
+                    )
+
+                if isinstance(result, raw.types.BadServerSalt):
+                    self.salt = result.new_server_salt
+                    return await self.send(data, wait_response, timeout)
+
+                return result
+            return None
+        finally:
+            # Requests cancelled by a beta deadline must not leak result slots.
             self.results.pop(msg_id, None)
-            raise e
-
-        if wait_response:
-            with contextlib.suppress(asyncio.TimeoutError):
-                await asyncio.wait_for(self.results[msg_id].event.wait(), timeout)
-
-            result = self.results.pop(msg_id).value
-
-            if result is None:
-                raise TimeoutError("Request timed out")
-
-            if isinstance(result, raw.types.RpcError):
-                if isinstance(
-                    data,
-                    (
-                        raw.functions.InvokeWithoutUpdates,
-                        raw.functions.InvokeWithTakeout,
-                    ),
-                ):
-                    data = data.query
-
-                RPCError.raise_it(result, type(data))
-
-            if isinstance(result, raw.types.BadMsgNotification):
-                log.warning(
-                    "%s: %s",
-                    BadMsgNotification.__name__,
-                    BadMsgNotification(result.error_code),
-                )
-
-            if isinstance(result, raw.types.BadServerSalt):
-                self.salt = result.new_server_salt
-                return await self.send(data, wait_response, timeout)
-
-            return result
-        return None
 
     async def invoke(
         self,
@@ -419,6 +423,7 @@ class Session:
         retries: int = MAX_RETRIES,
         timeout: float = WAIT_TIMEOUT,
         sleep_threshold: float = SLEEP_THRESHOLD,
+        *, beta_request_deadline: float | None = None,
     ):
         with contextlib.suppress(asyncio.TimeoutError):
             await asyncio.wait_for(self.is_started.wait(), self.WAIT_TIMEOUT)
@@ -447,6 +452,16 @@ class Session:
                     await asyncio.sleep(1)
                     continue
 
+                if beta_request_deadline is not None:
+                    try:
+                        return await asyncio.wait_for(
+                            self.send(query, timeout=timeout),
+                            timeout=beta_request_deadline,
+                        )
+                    except asyncio.TimeoutError as exc:
+                        log.warning("Beta media request timeout | %s | deadline=%ss",
+                                    query_name, beta_request_deadline)
+                        raise TimeoutError("Beta media request deadline exceeded") from exc
                 return await self.send(query, timeout=timeout)
             except (FloodWait, FloodPremiumWait) as e:
                 amount = e.value
