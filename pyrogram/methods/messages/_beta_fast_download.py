@@ -206,4 +206,18 @@ async def download_media_parallel(client, packet, workers=2):
         except Exception as exc:
             log.warning("Beta recovery exhausted (%s); restarting with standard downloader", exc)
             await _emit_progress(client, progress, args, 0, file_size)
-            return await client.handle_download(packet)
+            result = await client.handle_download(packet)
+            if not result:
+                return None
+            # The legacy get_file can end early after logging an RPC error.
+            # Reject incomplete standard fallback results in beta mode.
+            expected = os.path.abspath(re.sub(r"\\", "/", os.path.join(directory, file_name)))
+            if os.path.abspath(os.fspath(result)) != expected:
+                log.error("Beta recovery | unexpected fallback path")
+                return None
+            if not os.path.isfile(expected) or os.path.getsize(expected) != file_size:
+                log.error("Beta recovery | incomplete standard fallback; discarding")
+                if os.path.isfile(expected):
+                    os.unlink(expected)
+                return None
+            return result
