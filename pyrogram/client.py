@@ -1045,7 +1045,7 @@ class Client(Methods):
                             )
 
                             try:
-                                await media_invoke(session, 
+                                await session.invoke(
                                     raw.functions.auth.ImportAuthorization(
                                         id=exported_auth.id,
                                         bytes=exported_auth.bytes
@@ -1058,7 +1058,7 @@ class Client(Methods):
                         else:
                             raise AuthBytesInvalid
 
-                r = await media_invoke(session, 
+                r = await media_invoke(session,
                     raw.functions.upload.GetFile(
                         location=location,
                         offset=offset_bytes,
@@ -1094,7 +1094,7 @@ class Client(Methods):
                         if len(chunk) < chunk_size or current >= total:
                             break
 
-                        r = await media_invoke(session, 
+                        r = await media_invoke(session,
                             raw.functions.upload.GetFile(
                                 location=location,
                                 offset=offset_bytes,
@@ -1113,7 +1113,7 @@ class Client(Methods):
                         await cdn_session.start()
 
                         while True:
-                            r2 = await media_invoke(cdn_session, 
+                            r2 = await media_invoke(cdn_session,
                                 raw.functions.upload.GetCdnFile(
                                     file_token=r.file_token,
                                     offset=offset_bytes,
@@ -1123,7 +1123,7 @@ class Client(Methods):
 
                             if isinstance(r2, raw.types.upload.CdnFileReuploadNeeded):
                                 try:
-                                    await media_invoke(session, 
+                                    await media_invoke(session,
                                         raw.functions.upload.ReuploadCdnFile(
                                             file_token=r.file_token,
                                             request_token=r2.request_token
@@ -1146,7 +1146,7 @@ class Client(Methods):
                                 )
                             )
 
-                            hashes = await media_invoke(session, 
+                            hashes = await media_invoke(session,
                                 raw.functions.upload.GetCdnFileHashes(
                                     file_token=r.file_token,
                                     offset=offset_bytes
